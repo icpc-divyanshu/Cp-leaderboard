@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CP Tracker</title>
+    <style>
+        /* Web 1.0 Retro Aesthetic */
+        body {
+            background-color: #FFFFFF;
+            color: #000000;
+            font-family: "Times New Roman", Times, serif;
+        }
+        h1, h2, h3 { font-weight: normal; }
+        table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            font-family: "Courier New", Consolas, monospace;
+            margin-bottom: 20px;
+        }
+        table, th, td { border: 1px solid #000000; }
+        th, td { padding: 5px; text-align: left; }
+        a {
+            color: #0000FF;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        a:visited { color: #800080; }
+        a:hover {
+            background-color: #000000;
+            color: #FFFFFF;
+        }
+        .hidden { display: none; }
+        .container { width: 80%; margin: 0 auto; }
+        .badges { margin: 15px 0; }
+        .badges img { margin-right: 10px; border: 0; }
+        input, button {
+            font-family: "Courier New", Consolas, monospace;
+            border: 1px solid #000000;
+            padding: 2px 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <center>
+            <h1>[ Competitive Programming Tracker ]</h1>
+            <hr width="100%">
+        </center>
+
+        <p>
+            [ <a onclick="showView('leaderboard-view')">Leaderboard</a> ] 
+            [ <a onclick="showView('register-view')">Register User</a> ]
+        </p>
+
+        <!-- REGISTRATION VIEW -->
+        <div id="register-view" class="hidden">
+            <h2>Register New User</h2>
+            <form id="registerForm">
+                <table>
+                    <tr>
+                        <td>Platform Alias (Username):</td>
+                        <td><input type="text" id="reg-username" required></td>
+                    </tr>
+                    <tr>
+                        <td>Codeforces Handle:</td>
+                        <td><input type="text" id="reg-cf" required></td>
+                    </tr>
+                    <tr>
+                        <td>CodeChef Handle:</td>
+                        <td><input type="text" id="reg-cc" required></td>
+                    </tr>
+                    <tr>
+                        <td>LeetCode Handle:</td>
+                        <td><input type="text" id="reg-lc" required></td>
+                    </tr>
+                    <tr>
+                        <td colspan="2"><center><button type="submit">Submit Registration</button></center></td>
+                    </tr>
+                </table>
+            </form>
+        </div>
+
+        <!-- LEADERBOARD VIEW -->
+        <div id="leaderboard-view">
+            <h2>Global Leaderboard</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>User</th>
+                        <th>Codeforces Rating</th>
+                        <th>CodeChef Rating</th>
+                        <th>LeetCode Solved</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody">
+                    <!-- Leaderboard Rows Injected Here -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- INDIVIDUAL USER PROFILE VIEW -->
+        <div id="profile-view" class="hidden">
+            <h2>User Profile: <span id="profile-username"></span></h2>
+            
+            <div class="badges" id="profile-badges"></div>
+            
+            <table id="profile-summary">
+                <!-- Summary of CF and CC injected here -->
+            </table>
+
+            <h3>LeetCode Submissions</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Difficulty</th>
+                        <th>Problems Solved</th>
+                        <th>Total Submissions</th>
+                    </tr>
+                </thead>
+                <tbody id="submissionsBody">
+                    <tr><td colspan="3"><marquee>Loading LeetCode Data...</marquee></td></tr>
+                </tbody>
+            </table>
+
+            <h3>LeetCode Topic Mastery</h3>
+            <ul>
+                <li><strong>Fundamental</strong><ul id="fundamental-topics"></ul></li>
+                <li><strong>Intermediate</strong><ul id="intermediate-topics"></ul></li>
+                <li><strong>Advanced</strong><ul id="advanced-topics"></ul></li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "https://cp-rating-api.vercel.app";
+
+        // Load users from LocalStorage. Defaults to an EMPTY array if no users exist.
+        let users = JSON.parse(localStorage.getItem('cp_users')) || [];
+
+        // --- CORE API FETCH FUNCTION ---
+        async function fetchUserStats(platform, handle) {
+            if (!handle) return null;
+            try {
+                const response = await fetch(`${API_BASE}/${platform}/${handle}`);
+                if (!response.ok) throw new Error('API Error');
+                return await response.json();
+            } catch (error) {
+                console.error(`Error fetching ${platform} for ${handle}:`, error);
+                return null;
+            }
+        }
+
+        function showView(viewId) {
+            document.getElementById('register-view').classList.add('hidden');
+            document.getElementById('leaderboard-view').classList.add('hidden');
+            document.getElementById('profile-view').classList.add('hidden');
+            
+            document.getElementById(viewId).classList.remove('hidden');
+            
+            if(viewId === 'leaderboard-view') renderLeaderboard();
+        }
+
+        // --- LEADERBOARD LOGIC ---
+        async function renderLeaderboard() {
+            const tbody = document.getElementById('leaderboardBody');
+            
+            // Check if there are zero users
+            if (users.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5"><center>No users registered yet. Click "Register User" to add someone.</center></td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = '<tr><td colspan="5"><marquee direction="left">Fetching live stats from API...</marquee></td></tr>';
+            
+            // Fetch live stats for all users concurrently
+            const liveUsers = await Promise.all(users.map(async (u) => {
+                const [cf, cc, lc] = await Promise.all([
+                    fetchUserStats('codeforces', u.codeforces),
+                    fetchUserStats('codechef', u.codechef),
+                    fetchUserStats('leetcode', u.leetcode)
+                ]);
+                
+                return {
+                    ...u,
+                    cfRating: cf && cf.rating ? cf.rating : 'N/A',
+                    ccRating: cc && cc.rating ? cc.rating : 'N/A',
+                    lcSolved: lc && lc.problemsSolved ? lc.problemsSolved : 'N/A'
+                };
+            }));
+
+            // Sort by Codeforces rating descending
+            liveUsers.sort((a, b) => (parseInt(b.cfRating) || 0) - (parseInt(a.cfRating) || 0));
+
+            tbody.innerHTML = '';
+            liveUsers.forEach((user, index) => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td><a onclick="viewProfile('${user.username}', '${user.codeforces}', '${user.codechef}', '${user.leetcode}')">${user.username}</a></td>
+                        <td>${user.cfRating}</td>
+                        <td>${user.ccRating}</td>
+                        <td>${user.lcSolved}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // --- PROFILE LOGIC ---
+        async function viewProfile(username, cf, cc, lc) {
+            showView('profile-view');
+            document.getElementById('profile-username').innerText = username;
+            
+            // Render Badges
+            document.getElementById('profile-badges').innerHTML = `
+                <img src="https://img.shields.io/endpoint?style=for-the-badge&url=https%3A%2F%2Fcp-rating-api.vercel.app%2Fbadge%2Fcodechef%2F${encodeURIComponent(cc)}&cacheSeconds=86400" alt="Codechef">
+                <img src="https://img.shields.io/endpoint?style=for-the-badge&url=https%3A%2F%2Fcp-rating-api.vercel.app%2Fbadge%2Fcodeforces%2F${encodeURIComponent(cf)}&cacheSeconds=86400" alt="Codeforces">
+                <img src="https://img.shields.io/endpoint?style=for-the-badge&url=https%3A%2F%2Fcp-rating-api.vercel.app%2Fbadge%2Fleetcode%2F${encodeURIComponent(lc)}&cacheSeconds=86400" alt="Leetcode">
+            `;
+
+            // Clear previous profile data
+            document.getElementById('profile-summary').innerHTML = '<tr><td><marquee>Loading Profile Data...</marquee></td></tr>';
+            document.getElementById('submissionsBody').innerHTML = '';
+            document.getElementById('fundamental-topics').innerHTML = '';
+            document.getElementById('intermediate-topics').innerHTML = '';
+            document.getElementById('advanced-topics').innerHTML = '';
+
+            // Fetch specific API data
+            const [cfData, ccData, lcData] = await Promise.all([
+                fetchUserStats('codeforces', cf),
+                fetchUserStats('codechef', cc),
+                fetchUserStats('leetcode', lc)
+            ]);
+
+            // Render CF and CC Summary Table
+            let summaryHTML = '<tr><th>Platform</th><th>Details</th></tr>';
+            if(cfData) {
+                summaryHTML += `<tr><td>Codeforces</td><td>Rank: ${cfData.rank || 'Unrated'} | Max Rating: ${cfData.maxRating || 'N/A'}</td></tr>`;
+            }
+            if(ccData) {
+                summaryHTML += `<tr><td>CodeChef</td><td>Stars: ${ccData.stars || 'Unrated'} | Global Rank: ${ccData.globalRank || 'N/A'}</td></tr>`;
+            }
+            document.getElementById('profile-summary').innerHTML = summaryHTML;
+
+            // Render LeetCode Submissions and Topics
+            if(lcData && lcData.submissions) {
+                const tbody = document.getElementById('submissionsBody');
+                tbody.innerHTML = '';
+                lcData.submissions.forEach(sub => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${sub.difficulty}</td>
+                            <td>${sub.count}</td>
+                            <td>${sub.submissions}</td>
+                        </tr>
+                    `;
+                });
+
+                // Render Topics
+                const renderTopics = (id, topicArray) => {
+                    const ul = document.getElementById(id);
+                    ul.innerHTML = '';
+                    if(!topicArray || topicArray.length === 0) {
+                        ul.innerHTML = '<li>None</li>';
+                        return;
+                    }
+                    topicArray.forEach(t => {
+                        ul.innerHTML += `<li>${t.tagName} - ${t.problemsSolved} solved</li>`;
+                    });
+                };
+
+                renderTopics('fundamental-topics', lcData.topics?.fundamental);
+                renderTopics('intermediate-topics', lcData.topics?.intermediate);
+                renderTopics('advanced-topics', lcData.topics?.advanced);
+            }
+        }
+
+        // --- REGISTRATION LOGIC ---
+        document.getElementById('registerForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const newUser = {
+                username: document.getElementById('reg-username').value,
+                codeforces: document.getElementById('reg-cf').value,
+                codechef: document.getElementById('reg-cc').value,
+                leetcode: document.getElementById('reg-lc').value
+            };
+            
+            // Add to array and save to LocalStorage
+            users.push(newUser);
+            localStorage.setItem('cp_users', JSON.stringify(users));
+            
+            alert('User successfully registered!');
+            this.reset();
+            showView('leaderboard-view');
+        });
+
+        // Initialize App
+        renderLeaderboard();
+    </script>
+</body>
+</html>
